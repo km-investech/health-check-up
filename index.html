@@ -3,12 +3,13 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>건강검진 트래커 - 무료 OCR 버전</title>
+<title>건강검진 트래커 - 멀티연도 OCR</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.1.9/Recharts.js"></script>
 
 <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet"/>
 
@@ -18,12 +19,14 @@ body{
   background:#f3f4f6;
   margin:0;
 }
+
 .card{
   background:white;
   border-radius:16px;
   padding:20px;
   box-shadow:0 2px 12px rgba(0,0,0,0.06);
 }
+
 .upload-zone{
   border:2px dashed #6366f1;
   border-radius:16px;
@@ -32,12 +35,14 @@ body{
   background:white;
   cursor:pointer;
 }
+
 .metric{
   padding:12px;
   border-radius:12px;
   background:#f9fafb;
   border:1px solid #e5e7eb;
 }
+
 pre{
   white-space:pre-wrap;
   word-break:break-word;
@@ -51,44 +56,74 @@ pre{
 
 <script type="text/babel">
 
-const {useState,useRef} = React;
+const {
+  useState,
+  useRef
+} = React;
+
+const {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} = Recharts;
 
 const METRICS = [
-  ["weight","체중","kg"],
-  ["bmi","BMI",""],
-  ["waist","허리둘레","cm"],
-  ["sbp","수축기혈압","mmHg"],
-  ["dbp","이완기혈압","mmHg"],
-  ["glucose","혈당","mg/dL"],
-  ["cholesterol","총콜레스테롤","mg/dL"],
-  ["hdl","HDL","mg/dL"],
-  ["ldl","LDL","mg/dL"],
-  ["triglyceride","중성지방","mg/dL"],
-  ["creatinine","크레아티닌","mg/dL"],
-  ["gfr","GFR","mL/min"],
-  ["ast","AST","IU/L"],
-  ["alt","ALT","IU/L"],
-  ["ggt","감마GTP","IU/L"],
+  ["weight","체중","kg","#6366f1"],
+  ["bmi","BMI","","#8b5cf6"],
+  ["waist","허리둘레","cm","#ec4899"],
+  ["sbp","수축기혈압","mmHg","#ef4444"],
+  ["dbp","이완기혈압","mmHg","#f97316"],
+  ["glucose","혈당","mg/dL","#f59e0b"],
+  ["cholesterol","총콜레스테롤","mg/dL","#10b981"],
+  ["hdl","HDL","mg/dL","#06b6d4"],
+  ["ldl","LDL","mg/dL","#3b82f6"],
+  ["triglyceride","중성지방","mg/dL","#84cc16"],
+  ["creatinine","크레아티닌","mg/dL","#14b8a6"],
+  ["gfr","GFR","mL/min","#0ea5e9"],
+  ["ast","AST","IU/L","#f43f5e"],
+  ["alt","ALT","IU/L","#d946ef"],
+  ["ggt","감마GTP","IU/L","#a855f7"],
 ];
 
 async function preprocessImage(file){
+
   return new Promise((resolve)=>{
+
     const img = new Image();
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
 
     img.onload = ()=>{
+
       const scale = 2;
 
       canvas.width = img.width * scale;
       canvas.height = img.height * scale;
 
-      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      ctx.drawImage(
+        img,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
 
-      const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
+      const imageData = ctx.getImageData(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
       const data = imageData.data;
 
       for(let i=0;i<data.length;i+=4){
+
         const gray =
           data[i] * 0.3 +
           data[i+1] * 0.59 +
@@ -102,6 +137,7 @@ async function preprocessImage(file){
       }
 
       ctx.putImageData(imageData,0,0);
+
       canvas.toBlob(resolve,"image/png");
     };
 
@@ -110,8 +146,12 @@ async function preprocessImage(file){
 }
 
 function extractNumber(text, regex){
+
   const m = text.match(regex);
-  return m ? Number(m[m.length - 1]) : null;
+
+  return m
+    ? Number(m[m.length - 1])
+    : null;
 }
 
 function parseHealthText(text){
@@ -123,6 +163,7 @@ function parseHealthText(text){
   );
 
   return {
+
     year: yearMatch
       ? Number(yearMatch[0])
       : new Date().getFullYear(),
@@ -197,33 +238,58 @@ async function extractFromImage(file){
 
 function App(){
 
-  const [data,setData] = useState(null);
+  const [data,setData] = useState([]);
   const [loading,setLoading] = useState(false);
+  const [progress,setProgress] = useState("");
+
+  const [selectedMetric,setSelectedMetric] =
+    useState("glucose");
 
   const inputRef = useRef(null);
 
-  async function handleFile(file){
+  async function handleFiles(files){
 
     try{
+
       setLoading(true);
 
-      const parsed = await extractFromImage(file);
+      const results = [];
 
-      setData(parsed);
+      for(let i=0;i<files.length;i++){
+
+        setProgress(
+          `${i+1} / ${files.length} 분석 중`
+        );
+
+        const parsed =
+          await extractFromImage(files[i]);
+
+        results.push(parsed);
+      }
+
+      results.sort((a,b)=>a.year-b.year);
+
+      setData(results);
 
     }catch(err){
 
       console.error(err);
+
       alert("OCR 분석 실패");
 
     }finally{
 
       setLoading(false);
+      setProgress("");
     }
   }
 
+  const selectedMetricObj =
+    METRICS.find(m=>m[0]===selectedMetric);
+
   return (
-    <div className="max-w-5xl mx-auto p-4">
+
+    <div className="max-w-6xl mx-auto p-4">
 
       <div className="card mb-4">
 
@@ -232,7 +298,8 @@ function App(){
         </h1>
 
         <p className="text-gray-500 mb-6">
-          무료 OCR 기반 건강검진표 자동 분석
+          여러 연도 건강검진표를 업로드하면
+          변화 추이를 자동 분석합니다
         </p>
 
         <div
@@ -242,11 +309,24 @@ function App(){
 
           {
             loading
-            ? <div className="text-xl">⏳ OCR 분석 중...</div>
-            : <div>
-                <div className="text-4xl mb-3">📄</div>
+            ? <div>
+                <div className="text-4xl mb-3">⏳</div>
                 <div className="font-semibold">
-                  건강검진표 이미지를 업로드하세요
+                  {progress}
+                </div>
+              </div>
+
+            : <div>
+                <div className="text-4xl mb-3">
+                  📄
+                </div>
+
+                <div className="font-semibold">
+                  여러 연도 이미지를 선택하세요
+                </div>
+
+                <div className="text-sm text-gray-500 mt-2">
+                  여러 파일 동시 업로드 가능
                 </div>
               </div>
           }
@@ -256,57 +336,153 @@ function App(){
         <input
           ref={inputRef}
           type="file"
+          multiple
           accept="image/*"
           capture="environment"
           style={{display:"none"}}
           onChange={(e)=>{
-            if(e.target.files[0]){
-              handleFile(e.target.files[0]);
-            }
+            handleFiles(
+              [...e.target.files]
+            );
           }}
         />
 
       </div>
 
       {
-        data &&
+        data.length > 0 &&
+
         <div className="space-y-4">
 
           <div className="card">
 
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">
-                📊 분석 결과
-              </h2>
-
-              <div className="text-sm text-gray-500">
-                OCR 정확도:
-                <b> {Math.round(data.confidence)}%</b>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="flex flex-wrap gap-2 mb-4">
 
               {
-                METRICS.map(([key,label,unit])=>(
+                METRICS.map(([key,label])=>(
 
-                  <div key={key} className="metric">
-
-                    <div className="text-sm text-gray-500">
-                      {label}
-                    </div>
-
-                    <div className="text-2xl font-bold text-indigo-600">
-                      {data[key] ?? "—"}
-
-                      <span className="text-sm text-gray-400 ml-1">
-                        {unit}
-                      </span>
-                    </div>
-
-                  </div>
+                  <button
+                    key={key}
+                    onClick={()=>
+                      setSelectedMetric(key)
+                    }
+                    className={
+                      "px-3 py-2 rounded-full text-sm " +
+                      (
+                        selectedMetric===key
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-100 text-gray-600"
+                      )
+                    }
+                  >
+                    {label}
+                  </button>
                 ))
               }
+
+            </div>
+
+            <h2 className="text-xl font-bold mb-4">
+              📈 {selectedMetricObj[1]} 변화 추이
+            </h2>
+
+            <ResponsiveContainer width="100%" height={350}>
+
+              <LineChart data={data}>
+
+                <CartesianGrid strokeDasharray="3 3"/>
+
+                <XAxis dataKey="year"/>
+
+                <YAxis/>
+
+                <Tooltip/>
+
+                <Legend/>
+
+                <Line
+                  type="monotone"
+                  dataKey={selectedMetric}
+                  stroke={selectedMetricObj[3]}
+                  strokeWidth={3}
+                />
+
+              </LineChart>
+
+            </ResponsiveContainer>
+
+          </div>
+
+          <div className="card">
+
+            <h2 className="text-xl font-bold mb-4">
+              📊 연도별 데이터
+            </h2>
+
+            <div className="overflow-auto">
+
+              <table className="min-w-full text-sm">
+
+                <thead>
+
+                  <tr className="border-b">
+
+                    <th className="text-left p-2">
+                      항목
+                    </th>
+
+                    {
+                      data.map(d=>(
+
+                        <th
+                          key={d.year}
+                          className="p-2"
+                        >
+                          {d.year}
+                        </th>
+                      ))
+                    }
+
+                  </tr>
+
+                </thead>
+
+                <tbody>
+
+                  {
+                    METRICS.map(([key,label,unit])=>(
+
+                      <tr
+                        key={key}
+                        className="border-b"
+                      >
+
+                        <td className="p-2 font-semibold">
+                          {label}
+                        </td>
+
+                        {
+                          data.map(d=>(
+
+                            <td
+                              key={d.year}
+                              className="p-2 text-center"
+                            >
+                              {d[key] ?? "—"}
+                              <span className="text-gray-400 text-xs ml-1">
+                                {unit}
+                              </span>
+                            </td>
+                          ))
+                        }
+
+                      </tr>
+                    ))
+                  }
+
+                </tbody>
+
+              </table>
 
             </div>
 
@@ -318,7 +494,26 @@ function App(){
               🔍 OCR 원문
             </h2>
 
-            <pre>{data.rawText}</pre>
+            {
+              data.map((d,i)=>(
+
+                <details
+                  key={i}
+                  className="mb-4"
+                >
+
+                  <summary className="cursor-pointer font-semibold">
+                    {d.year}년 원문
+                    (정확도 {Math.round(d.confidence)}%)
+                  </summary>
+
+                  <pre className="mt-2">
+                    {d.rawText}
+                  </pre>
+
+                </details>
+              ))
+            }
 
           </div>
 
