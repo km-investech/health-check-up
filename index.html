@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>건강검진 트래커</title>
+<script src="https://js.puter.com/v2/"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
@@ -11,57 +12,40 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet"/>
 <style>
-  body { font-family: 'Segoe UI', sans-serif; background: #f9fafb; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f9fafb; margin:0; }
   .tooltip-arrow { width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:6px solid #1f2937; position:absolute; top:100%; left:16px; }
+  .upload-zone { border: 2px dashed #c7d2fe; border-radius:16px; transition: all 0.2s; }
+  .upload-zone:hover { border-color: #6366f1; background: #eef2ff; }
+  .upload-zone.drag { border-color: #6366f1; background: #eef2ff; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useRef, useEffect } = React;
+const { useState, useRef, useEffect, useCallback } = React;
 const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } = Recharts;
 
-const INITIAL_DATA = [
-  { year:2016, weight:67, bmi:22.9, waist:73, sbp:105, dbp:69, glucose:95, cholesterol:161, hdl:62, ldl:119, triglyceride:75, creatinine:1.1, gfr:79, ast:18, alt:7, ggt:17, hospital:"서울독립사병원", date:"2016년 12월 15일", judgment:"정상", suspected:"없음", disease:"없음", other:"없음", opinion:"" },
-  { year:2017, weight:67, bmi:22.9, waist:81, sbp:110, dbp:70, glucose:106, cholesterol:157, hdl:61, ldl:78, triglyceride:80, creatinine:1.2, gfr:71, ast:25, alt:11, ggt:18, hospital:"서울독립사병원", date:"2017년 3월 10일", judgment:"정상", suspected:"없음", disease:"없음", other:"없음", opinion:"" },
-  { year:2018, weight:68, bmi:23.3, waist:80, sbp:112, dbp:73, glucose:84, cholesterol:null, hdl:null, ldl:null, triglyceride:null, creatinine:1.0, gfr:87, ast:30, alt:18, ggt:26, hospital:"서울독립사병원", date:"2018년 3월 9일", judgment:"정상", suspected:"없음", disease:"없음", other:"없음", opinion:"" },
-  { year:2019, weight:69, bmi:23.5, waist:76, sbp:89, dbp:73, glucose:90, cholesterol:null, hdl:null, ldl:null, triglyceride:null, creatinine:1.0, gfr:87, ast:20, alt:8, ggt:20, hospital:"서울독립사병원", date:"2019년 3월 26일", judgment:"정상", suspected:"없음", disease:"없음", other:"없음", opinion:"절주 또는 금주가 필요합니다." },
-  { year:2020, weight:67, bmi:22.9, waist:75, sbp:113, dbp:75, glucose:104, cholesterol:null, hdl:null, ldl:null, triglyceride:null, creatinine:1.1, gfr:77, ast:15, alt:26, ggt:20, hospital:"서울독립사병원", date:"2020년 3월 17일", judgment:"정상", suspected:"없음", disease:"없음", other:"없음", opinion:"절주 및 꾸준한 운동을 권합니다." },
-  { year:2021, weight:70, bmi:23.9, waist:79, sbp:111, dbp:69, glucose:100, cholesterol:172, hdl:null, ldl:null, triglyceride:87, creatinine:1.2, gfr:69, ast:18, alt:11, ggt:21, hospital:"서울독립사병원", date:"2021년 2월 24일", judgment:"정상", suspected:"없음", disease:"있음", other:"절담검진 및 꾸준 운동 요함", opinion:"절주 및 꾸준한 운동을 권합니다." },
-  { year:2022, weight:67.9, bmi:23.5, waist:76, sbp:117, dbp:68, glucose:91, cholesterol:null, hdl:null, ldl:null, triglyceride:null, creatinine:1.0, gfr:85, ast:23, alt:11, ggt:20, hospital:"부천우리병원", date:"2022년 5월 4일", judgment:"정상", suspected:"없음", disease:"없음", other:"", opinion:"운동을 생활화 하시기 바랍니다." },
-  { year:2023, weight:71, bmi:24.3, waist:81.5, sbp:123, dbp:68, glucose:83, cholesterol:null, hdl:null, ldl:null, triglyceride:null, creatinine:0.9, gfr:94, ast:23, alt:16, ggt:20, hospital:"대야의료재단한도병원", date:"2023년 6월 2일", judgment:"고혈압 전단계", suspected:"고혈압", disease:"없음", other:"주기적인 혈압측정, 식이치료, 이상지질증관리", opinion:"주기적인 혈압측정, 식이치료, 이상지질증관리" },
-  { year:2024, weight:71, bmi:24.3, waist:79, sbp:104, dbp:61, glucose:83, cholesterol:null, hdl:null, ldl:null, triglyceride:null, creatinine:null, gfr:101, ast:21, alt:9, ggt:19, hospital:"대야의료재단한도병원", date:"2024년 3월 14일", judgment:"정상", suspected:"없음", disease:"없음", other:"", opinion:"" },
-  { year:2025, weight:67.5, bmi:23.2, waist:78, sbp:121, dbp:77, glucose:89, cholesterol:161, hdl:57, ldl:109, triglyceride:76, creatinine:1.12, gfr:77, ast:35, alt:14, ggt:20, hospital:"의료법인루가의료재단 나은병원", date:"2025년 2월 24일", judgment:"고혈압 전단계", suspected:"혈압측정, 혈당측정, 이상지질증관리", disease:"없음", other:"없음", opinion:"주기적인 혈압측정, 혈당측정, 이상지질증관리" },
-  { year:2026, weight:73.1, bmi:25.1, waist:85.5, sbp:109, dbp:62, glucose:93, cholesterol:null, hdl:null, ldl:null, triglyceride:null, creatinine:1.03, gfr:85, ast:40, alt:14, ggt:26, hospital:"의료법인루가의료재단 나은병원", date:"2026년 1월 27일", judgment:"정상", suspected:"해당사항없음", disease:"해당사항없음", other:"체중조절 및 운동 요함", opinion:"체중조절 및 운동 요함" },
-];
+const STORAGE_KEY = "health_tracker_data";
 
 const METRICS = [
   { key:"weight", label:"체중", unit:"kg", normal:[null,80], thresholds:[80,85,90], color:"#6366f1", desc:"몸의 총 무게. 과체중은 대사질환·관절 부담을 높입니다. 정상: ~80kg(키·성별 따라 다름)" },
-  { key:"bmi", label:"BMI", unit:"", normal:[18.5,24.9], thresholds:[23,25,30], color:"#8b5cf6", desc:"체질량지수(체중÷키²). 체지방 과다 여부를 간접 측정합니다. 정상: 18.5–22.9, 과체중: 23–24.9, 비만: 25 이상" },
+  { key:"bmi", label:"BMI", unit:"", normal:[18.5,24.9], thresholds:[23,25,30], color:"#8b5cf6", desc:"체질량지수(체중÷키²). 정상: 18.5–22.9, 과체중: 23–24.9, 비만: 25 이상" },
   { key:"waist", label:"허리둘레", unit:"cm", normal:[null,80], thresholds:[85,90,95], color:"#a855f7", desc:"복부비만 지표. 내장지방 축적과 직결됩니다. 한국 남성 기준 정상: 90cm 미만" },
   { key:"sbp", label:"수축기혈압", unit:"mmHg", normal:[null,120], thresholds:[120,130,140], color:"#ef4444", desc:"심장이 수축할 때 혈관 압력(위 혈압). 정상: 120 미만, 고혈압: 140 이상" },
   { key:"dbp", label:"이완기혈압", unit:"mmHg", normal:[null,80], thresholds:[80,90,100], color:"#f97316", desc:"심장이 이완할 때 혈관 압력(아래 혈압). 정상: 80 미만, 고혈압: 90 이상" },
-  { key:"glucose", label:"공복혈당", unit:"mg/dL", normal:[null,99], thresholds:[100,110,126], color:"#f59e0b", desc:"8시간 이상 공복 후 혈당. 당뇨 진단 지표. 정상: 100 미만, 당뇨: 126 이상" },
-  { key:"cholesterol", label:"총콜레스테롤", unit:"mg/dL", normal:[null,199], thresholds:[200,220,240], color:"#10b981", desc:"혈액 내 총 콜레스테롤. 높으면 동맥경화 위험. 정상: 200 미만, 고위험: 240 이상" },
-  { key:"hdl", label:"HDL", unit:"mg/dL", normal:[40,null], thresholds:[40,35,30], color:"#06b6d4", desc:"좋은 콜레스테롤. 혈관 청소 역할. 높을수록 좋음. 정상: 40 이상", reverse:true },
-  { key:"ldl", label:"LDL", unit:"mg/dL", normal:[null,129], thresholds:[130,150,160], color:"#3b82f6", desc:"나쁜 콜레스테롤. 혈관 벽에 쌓여 동맥경화 유발. 정상: 130 미만, 고위험: 160 이상" },
+  { key:"glucose", label:"공복혈당", unit:"mg/dL", normal:[null,99], thresholds:[100,110,126], color:"#f59e0b", desc:"8시간 이상 공복 후 혈당. 정상: 100 미만, 당뇨: 126 이상" },
+  { key:"cholesterol", label:"총콜레스테롤", unit:"mg/dL", normal:[null,199], thresholds:[200,220,240], color:"#10b981", desc:"혈액 내 총 콜레스테롤. 높으면 동맥경화 위험. 정상: 200 미만" },
+  { key:"hdl", label:"HDL", unit:"mg/dL", normal:[40,null], thresholds:[40,35,30], color:"#06b6d4", desc:"좋은 콜레스테롤. 높을수록 좋음. 정상: 40 이상", reverse:true },
+  { key:"ldl", label:"LDL", unit:"mg/dL", normal:[null,129], thresholds:[130,150,160], color:"#3b82f6", desc:"나쁜 콜레스테롤. 혈관 벽에 쌓여 동맥경화 유발. 정상: 130 미만" },
   { key:"triglyceride", label:"중성지방", unit:"mg/dL", normal:[null,149], thresholds:[150,175,200], color:"#84cc16", desc:"혈액 내 지방 성분. 과잉 탄수화물·알코올 섭취 시 상승. 정상: 150 미만" },
-  { key:"gfr", label:"GFR", unit:"mL/min", normal:[60,null], thresholds:[60,45,30], color:"#14b8a6", desc:"신사구체여과율. 신장 기능 지표. 정상: 60 이상, 60 미만 시 만성신장질환 의심", reverse:true },
+  { key:"gfr", label:"GFR", unit:"mL/min", normal:[60,null], thresholds:[60,45,30], color:"#14b8a6", desc:"신사구체여과율. 신장 기능 지표. 정상: 60 이상", reverse:true },
   { key:"ast", label:"AST(GOT)", unit:"IU/L", normal:[null,40], thresholds:[40,50,80], color:"#f43f5e", desc:"간·심근 효소. 상승 시 간 손상 의심. 정상: 40 이하" },
   { key:"alt", label:"ALT(GPT)", unit:"IU/L", normal:[null,35], thresholds:[35,45,80], color:"#ec4899", desc:"간 특이 효소. 지방간·간염 시 상승. 정상: 35 이하" },
-  { key:"ggt", label:"감마GTP", unit:"IU/L", normal:[null,50], thresholds:[50,75,100], color:"#d946ef", desc:"간·담도 효소. 음주·지방간 시 상승. 알코올에 민감. 정상: 50 이하" },
+  { key:"ggt", label:"감마GTP", unit:"IU/L", normal:[null,50], thresholds:[50,75,100], color:"#d946ef", desc:"간·담도 효소. 음주·지방간 시 상승. 정상: 50 이하" },
 ];
 
 const KPI_METRICS = ["weight","bmi","sbp","glucose","cholesterol","ast"];
 const FALLBACK_METRICS = ["sbp","glucose","cholesterol","bmi","ast","alt"];
-
-function getDefaultMetrics(data) {
-  const latest = data.reduce((a,b) => a.year > b.year ? a : b);
-  const abnormal = METRICS
-    .filter(m => latest[m.key] != null && getLevel(m.key, latest[m.key]) >= 1)
-    .map(m => m.key);
-  return abnormal.length > 0 ? abnormal : FALLBACK_METRICS;
-}
 const LEVEL_COLORS = ["#22c55e","#fbbf24","#f97316","#ef4444"];
 const LEVEL_LABELS = ["정상","주의","위험","고위험"];
 const LEVEL_BADGE = ["bg-green-100 text-green-700","bg-yellow-100 text-yellow-700","bg-orange-100 text-orange-700","bg-red-100 text-red-700"];
@@ -75,40 +59,45 @@ function getLevel(key, val) {
   return val < t1 ? 0 : val < t2 ? 1 : val < t3 ? 2 : 3;
 }
 
+function getDefaultMetrics(data) {
+  if (!data.length) return FALLBACK_METRICS;
+  const latest = data.reduce((a,b) => a.year > b.year ? a : b);
+  const abnormal = METRICS.filter(m => latest[m.key] != null && getLevel(m.key, latest[m.key]) >= 1).map(m => m.key);
+  return abnormal.length > 0 ? abnormal : FALLBACK_METRICS;
+}
+
+function loadData() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
+}
+function saveData(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+}
+
 function StatusBadge({ level }) {
   if (level < 0) return React.createElement('span', { className:"text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-400" }, "없음");
   return React.createElement('span', { className:`text-xs px-2 py-0.5 rounded-full font-medium ${LEVEL_BADGE[level]}` }, LEVEL_LABELS[level]);
 }
 
-// 전역 툴팁 상태
 const ttState = { key: null, hide: null };
-
 function MetricLabel({ metricKey, children }) {
   const [vis, setVis] = useState(false);
   const timerRef = useRef(null);
   const m = METRICS.find(m => m.key === metricKey);
-
   function show(e) {
     e.stopPropagation();
-    if (ttState.key && ttState.key !== metricKey && ttState.hide) {
-      ttState.hide(false);
-      clearTimeout(timerRef.current);
-    }
-    ttState.key = metricKey;
-    ttState.hide = setVis;
+    if (ttState.key && ttState.key !== metricKey && ttState.hide) { ttState.hide(false); clearTimeout(timerRef.current); }
+    ttState.key = metricKey; ttState.hide = setVis;
     setVis(true);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => { setVis(false); ttState.key = null; }, 5000);
   }
-
   return (
     <span style={{ position:"relative", display:"inline-flex", alignItems:"center", gap:4, cursor:"pointer", userSelect:"none" }} onClick={show}>
       {children}
       <span style={{ color:"#d1d5db", fontSize:11 }}>ℹ</span>
       {vis && m?.desc && (
         <span style={{ position:"absolute", bottom:"100%", left:0, marginBottom:8, width:220, background:"#1f2937", color:"white", fontSize:11, borderRadius:12, padding:"8px 12px", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", lineHeight:1.6, zIndex:100, pointerEvents:"none", whiteSpace:"normal" }}>
-          {m.desc}
-          <span className="tooltip-arrow" />
+          {m.desc}<span className="tooltip-arrow"/>
         </span>
       )}
     </span>
@@ -118,8 +107,7 @@ function MetricLabel({ metricKey, children }) {
 function CustomDot({ cx, cy, value, metricKey, stroke }) {
   const level = getLevel(metricKey, value);
   if (value == null || cx == null || cy == null) return null;
-  const fill = level < 0 ? "transparent" : LEVEL_COLORS[level];
-  return React.createElement('circle', { cx, cy, r:3.5, fill, stroke, strokeWidth:2 });
+  return React.createElement('circle', { cx, cy, r:3.5, fill: level < 0 ? "transparent" : LEVEL_COLORS[level], stroke, strokeWidth:2 });
 }
 
 function CustomTooltip({ active, payload, label }) {
@@ -129,20 +117,113 @@ function CustomTooltip({ active, payload, label }) {
       <p style={{ fontWeight:700, color:"#374151", marginBottom:4 }}>{label}년</p>
       {payload.map((p,i) => {
         const lv = getLevel(p.dataKey, p.value);
-        return <p key={i} style={{ color:p.color }}>{p.name}: <strong>{p.value}</strong>{lv >= 0 && <span style={{ opacity:0.7, fontSize:11 }}> ({LEVEL_LABELS[lv]})</span>}</p>;
+        return <p key={i} style={{ color:p.color, margin:"2px 0" }}>{p.name}: <strong>{p.value}</strong>{lv >= 0 && <span style={{ opacity:0.7, fontSize:11 }}> ({LEVEL_LABELS[lv]})</span>}</p>;
       })}
     </div>
   );
 }
 
-function App() {
-  const [data, setData] = useState(INITIAL_DATA);
-  const [selMetrics, setSelMetrics] = useState(() => getDefaultMetrics(INITIAL_DATA));
+const PROMPT = `이 건강검진 결과 이미지에서 항목을 추출해서 JSON으로만 응답하세요. 다른 텍스트 없이 JSON만 출력하세요.
+{"year":연도,"hospital":"검진기관","date":"검진일","judgment":"판정","suspected":"의심질환","disease":"유질환","other":"기타","opinion":"종합소견","weight":체중또는null,"bmi":BMI또는null,"waist":허리둘레또는null,"sbp":수축기혈압또는null,"dbp":이완기혈압또는null,"glucose":공복혈당또는null,"cholesterol":총콜레스테롤또는null,"hdl":HDL또는null,"ldl":LDL또는null,"triglyceride":중성지방또는null,"creatinine":크레아티닌또는null,"gfr":GFR또는null,"ast":AST또는null,"alt":ALT또는null,"ggt":감마GTP또는null}`;
+
+async function extractFromImage(file) {
+  const dataURL = await new Promise((res,rej) => { const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+  const resp = await puter.ai.chat(PROMPT, dataURL, { model:"claude-sonnet-4-20250514" });
+  const text = typeof resp === "string" ? resp : (resp?.message?.content?.[0]?.text || resp?.text || JSON.stringify(resp));
+  return JSON.parse(text.replace(/```json|```/g,"").trim());
+}
+
+// ── 온보딩 화면 ──────────────────────────────────────────
+function Onboarding({ onStart }) {
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [msg, setMsg] = useState("");
+  const fileRef = useRef(null);
+
+  async function processFiles(files) {
+    setUploading(true);
+    setMsg(`🔍 ${files.length}개 이미지 분석 중... (Puter 로그인이 필요할 수 있습니다)`);
+    const results = [];
+    for (let i = 0; i < files.length; i++) {
+      try {
+        setMsg(`🔍 ${i+1}/${files.length} 분석 중...`);
+        const parsed = await extractFromImage(files[i]);
+        results.push(parsed);
+      } catch(e) { console.error(e); }
+    }
+    if (results.length) {
+      const sorted = results.sort((a,b) => a.year-b.year);
+      saveData(sorted);
+      setMsg(`🎉 ${results.length}개 연도 데이터 추출 완료!`);
+      setTimeout(() => onStart(sorted), 800);
+    } else {
+      setMsg("❌ 분석 실패. 이미지를 확인하거나 다시 시도해주세요.");
+      setUploading(false);
+    }
+  }
+
+  function onDrop(e) {
+    e.preventDefault(); setDragging(false);
+    processFiles([...e.dataTransfer.files].filter(f => f.type.startsWith("image/")));
+  }
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, background:"linear-gradient(135deg,#eef2ff 0%,#f9fafb 60%)" }}>
+      <div style={{ maxWidth:480, width:"100%" }}>
+        <div style={{ textAlign:"center", marginBottom:32 }}>
+          <div style={{ fontSize:48, marginBottom:8 }}>🏥</div>
+          <h1 style={{ fontSize:28, fontWeight:800, color:"#4f46e5", margin:0 }}>건강검진 트래커</h1>
+          <p style={{ color:"#6b7280", marginTop:8, fontSize:14 }}>건강검진 결과 이미지를 올리면 AI가 자동으로 데이터를 추출해 연도별 추이를 보여드립니다.</p>
+          <p style={{ color:"#a5b4fc", marginTop:4, fontSize:12 }}>Puter.js 기반 · API 키 불필요 · 무료</p>
+        </div>
+
+        <div
+          className={`upload-zone ${dragging ? "drag" : ""}`}
+          style={{ background:"white", padding:40, textAlign:"center", cursor: uploading ? "default" : "pointer", boxShadow:"0 2px 12px rgba(0,0,0,0.06)" }}
+          onClick={() => !uploading && fileRef.current.click()}
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+        >
+          {uploading ? (
+            <div>
+              <div style={{ fontSize:36, marginBottom:12 }}>⏳</div>
+              <p style={{ color:"#4f46e5", fontWeight:600, fontSize:14 }}>{msg}</p>
+              <p style={{ color:"#9ca3af", fontSize:12, marginTop:8 }}>처음 사용 시 Puter 로그인 팝업이 뜰 수 있어요</p>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize:40, marginBottom:12 }}>📂</div>
+              <p style={{ fontWeight:600, color:"#374151", fontSize:15, margin:0 }}>검진 결과 이미지를 드래그하거나 클릭해서 선택</p>
+              <p style={{ color:"#9ca3af", fontSize:12, marginTop:8 }}>여러 연도 이미지를 한번에 올려도 됩니다</p>
+            </div>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e => processFiles([...e.target.files])}/>
+
+        {!uploading && msg && <p style={{ textAlign:"center", marginTop:12, color: msg.startsWith("❌") ? "#ef4444" : "#6b7280", fontSize:13 }}>{msg}</p>}
+
+        {loadData().length > 0 && !uploading && (
+          <button onClick={() => onStart(loadData())}
+            style={{ width:"100%", marginTop:16, padding:"12px 0", background:"#4f46e5", color:"white", border:"none", borderRadius:12, fontSize:14, fontWeight:600, cursor:"pointer" }}>
+            📊 저장된 데이터 이어보기 ({loadData().length}개 연도)
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── 메인 대시보드 ─────────────────────────────────────────
+function Dashboard({ data: initData, onReset }) {
+  const [data, setData] = useState(initData);
+  const [selMetrics, setSelMetrics] = useState(() => getDefaultMetrics(initData));
   const [tab, setTab] = useState("chart");
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState("");
   const [editRow, setEditRow] = useState(null);
-  const [kpiYear, setKpiYear] = useState(Math.max(...INITIAL_DATA.map(d => d.year)));
+  const [kpiYear, setKpiYear] = useState(() => Math.max(...initData.map(d => d.year)));
+  const [confirmReset, setConfirmReset] = useState(false);
   const tableRef = useRef(null);
   const fileRef = useRef(null);
 
@@ -151,82 +232,55 @@ function App() {
   const prev = data.find(d => d.year === kpiYear-1);
   const allSel = selMetrics.length === METRICS.length;
 
-  useEffect(() => {
-    if (tab === "table" && tableRef.current) {
-      setTimeout(() => { tableRef.current.scrollLeft = tableRef.current.scrollWidth; }, 50);
-    }
-  }, [tab]);
+  useEffect(() => { saveData(data); }, [data]);
+  useEffect(() => { if (tab==="table" && tableRef.current) setTimeout(() => { tableRef.current.scrollLeft = tableRef.current.scrollWidth; }, 50); }, [tab]);
 
   function toggleAll() { setSelMetrics(allSel ? [] : METRICS.map(m => m.key)); }
-  function toggleMetric(k) { setSelMetrics(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]); }
+  function toggleMetric(k) { setSelMetrics(s => s.includes(k) ? s.filter(x => x!==k) : [...s,k]); }
 
   async function handleUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     setUploading(true); setUploadMsg("이미지 분석 중...");
     try {
-      const b64 = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(",")[1]);
-        r.onerror = rej;
-        r.readAsDataURL(file);
-      });
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", "x-api-key": window.ANTHROPIC_API_KEY || "", "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
-        body: JSON.stringify({
-          model:"claude-opus-4-5",
-          max_tokens:1500,
-          messages:[{ role:"user", content:[
-            { type:"image", source:{ type:"base64", media_type:file.type||"image/jpeg", data:b64 } },
-            { type:"text", text:`이 건강검진 결과 이미지에서 항목을 추출해서 JSON으로만 응답하세요. 다른 텍스트 없이 JSON만 출력하세요.\n{"year":연도,"hospital":"검진기관","date":"검진일","judgment":"판정","suspected":"의심질환","disease":"유질환","other":"기타","opinion":"종합소견","weight":체중,"bmi":BMI,"waist":허리둘레,"sbp":수축기혈압,"dbp":이완기혈압,"glucose":공복혈당,"cholesterol":총콜레스테롤또는null,"hdl":HDL또는null,"ldl":LDL또는null,"triglyceride":중성지방또는null,"creatinine":크레아티닌또는null,"gfr":GFR또는null,"ast":AST또는null,"alt":ALT또는null,"ggt":감마GTP또는null}` }
-          ]}]
-        })
-      });
-      const json = await resp.json();
-      const text = (json.content||[]).map(b => b.text||"").join("");
-      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      const parsed = await extractFromImage(file);
       setData(prev => {
-        const exists = prev.find(d => d.year === parsed.year);
-        if (exists) return prev.map(d => d.year === parsed.year ? {...d,...parsed} : d);
-        return [...prev, parsed].sort((a,b) => a.year-b.year);
+        const next = prev.find(d => d.year===parsed.year) ? prev.map(d => d.year===parsed.year ? {...d,...parsed} : d) : [...prev, parsed].sort((a,b) => a.year-b.year);
+        return next;
       });
       setKpiYear(parsed.year);
-      setUploadMsg(`✅ ${parsed.year}년 데이터 추가 완료!`);
-    } catch(err) {
-      setUploadMsg("❌ 분석 실패. API 키를 확인해주세요.");
-      console.error(err);
-    }
-    setUploading(false);
-    fileRef.current.value = "";
-    setTimeout(() => setUploadMsg(""), 4000);
+      setUploadMsg(`✅ ${parsed.year}년 추가 완료!`);
+    } catch { setUploadMsg("❌ 분석 실패."); }
+    setUploading(false); fileRef.current.value="";
+    setTimeout(() => setUploadMsg(""), 3000);
   }
 
-  function saveEdit() {
-    setData(prev => prev.map(d => d.year === editRow.year ? editRow : d));
-    setEditRow(null);
+  function saveEdit() { setData(prev => prev.map(d => d.year===editRow.year ? editRow : d)); setEditRow(null); }
+
+  function handleReset() {
+    localStorage.removeItem(STORAGE_KEY);
+    onReset();
   }
 
-  const chartData = data.map(d => {
-    const obj = { year: d.year };
-    selMetrics.forEach(k => { obj[k] = d[k]; });
-    return obj;
-  });
-  const singleM = selMetrics.length === 1 ? METRICS.find(m => m.key === selMetrics[0]) : null;
+  const chartData = data.map(d => { const o={year:d.year}; selMetrics.forEach(k=>{o[k]=d[k];}); return o; });
+  const singleM = selMetrics.length===1 ? METRICS.find(m=>m.key===selMetrics[0]) : null;
 
   return (
-    <div style={{ minHeight:"100vh", background:"#f9fafb", fontFamily:"'Segoe UI',sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:"#f9fafb" }}>
       {/* Header */}
       <div style={{ background:"white", borderBottom:"1px solid #e5e7eb", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <div>
-          <h1 style={{ fontSize:20, fontWeight:700, color:"#4f46e5", margin:0 }}>🏥 건강검진 트래커</h1>
+          <h1 style={{ fontSize:18, fontWeight:700, color:"#4f46e5", margin:0 }}>🏥 건강검진 트래커</h1>
           <p style={{ fontSize:11, color:"#9ca3af", margin:"2px 0 0" }}>{years[0]} – {years[years.length-1]} · {data.length}개 연도</p>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {uploadMsg && <span style={{ fontSize:12, color:"#6b7280" }}>{uploadMsg}</span>}
+          {uploadMsg && <span style={{ fontSize:11, color:"#6b7280" }}>{uploadMsg}</span>}
           <button onClick={() => fileRef.current.click()} disabled={uploading}
-            style={{ background:"#4f46e5", color:"white", border:"none", borderRadius:8, padding:"8px 14px", fontSize:13, cursor:"pointer", opacity:uploading?0.5:1 }}>
-            {uploading ? "⏳" : "📷"} 이미지 추가
+            style={{ background:"#4f46e5", color:"white", border:"none", borderRadius:8, padding:"7px 12px", fontSize:12, cursor:"pointer", opacity:uploading?0.5:1 }}>
+            {uploading?"⏳":"📷"} 추가
+          </button>
+          <button onClick={() => setConfirmReset(true)}
+            style={{ background:"#f3f4f6", color:"#6b7280", border:"none", borderRadius:8, padding:"7px 12px", fontSize:12, cursor:"pointer" }}>
+            🔄 초기화
           </button>
           <input ref={fileRef} type="file" accept="image/*" style={{ display:"none" }} onChange={handleUpload}/>
         </div>
@@ -237,7 +291,7 @@ function App() {
         <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 }}>
           {years.map(y => (
             <button key={y} onClick={() => setKpiYear(y)}
-              style={{ padding:"4px 12px", borderRadius:20, fontSize:12, fontWeight:600, border: kpiYear===y ? "none" : "1px solid #e5e7eb", background: kpiYear===y ? "#4f46e5" : "white", color: kpiYear===y ? "white" : "#6b7280", cursor:"pointer" }}>
+              style={{ padding:"4px 12px", borderRadius:20, fontSize:12, fontWeight:600, border: kpiYear===y?"none":"1px solid #e5e7eb", background: kpiYear===y?"#4f46e5":"white", color: kpiYear===y?"white":"#6b7280", cursor:"pointer" }}>
               {y}년
             </button>
           ))}
@@ -246,17 +300,17 @@ function App() {
         {/* KPI 카드 */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:16 }}>
           {KPI_METRICS.map(key => {
-            const m = METRICS.find(m => m.key === key);
-            const val = kpi?.[key]; const pval = prev?.[key];
-            const diff = val!=null && pval!=null ? (val-pval).toFixed(1) : null;
-            const lv = getLevel(key, val);
+            const m = METRICS.find(m=>m.key===key);
+            const val=kpi?.[key], pval=prev?.[key];
+            const diff = val!=null&&pval!=null ? (val-pval).toFixed(1) : null;
+            const lv = getLevel(key,val);
             return (
               <div key={key} style={{ background:"white", borderRadius:12, padding:12, border:"1px solid #f3f4f6", boxShadow:"0 1px 4px rgba(0,0,0,0.05)" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
                   <MetricLabel metricKey={key}><span style={{ fontSize:11, color:"#9ca3af" }}>{m.label}</span></MetricLabel>
                   <StatusBadge level={lv}/>
                 </div>
-                <div style={{ fontSize:24, fontWeight:700, color:m.color }}>{val??"-"}<span style={{ fontSize:13, fontWeight:400, color:"#9ca3af", marginLeft:4 }}>{m.unit}</span></div>
+                <div style={{ fontSize:22, fontWeight:700, color:m.color }}>{val??"-"}<span style={{ fontSize:12, fontWeight:400, color:"#9ca3af", marginLeft:4 }}>{m.unit}</span></div>
                 {diff!=null && <div style={{ fontSize:11, marginTop:2, color:parseFloat(diff)>0?"#f87171":parseFloat(diff)<0?"#34d399":"#9ca3af" }}>
                   {parseFloat(diff)>0?"▲":parseFloat(diff)<0?"▼":"–"} {Math.abs(diff)} vs {kpiYear-1}년
                 </div>}
@@ -267,10 +321,10 @@ function App() {
 
         {/* 범례 */}
         <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:12, fontSize:11, color:"#6b7280" }}>
-          <span style={{ fontWeight:600, color:"#374151" }}>점 색상 기준:</span>
+          <span style={{ fontWeight:600, color:"#374151" }}>점 색상:</span>
           {[0,1,2,3].map(lv => (
             <span key={lv} style={{ display:"flex", alignItems:"center", gap:4 }}>
-              <span style={{ width:10, height:10, borderRadius:"50%", background:LEVEL_COLORS[lv], border:`2px solid ${LEVEL_COLORS[lv]}`, display:"inline-block" }}/>
+              <span style={{ width:10, height:10, borderRadius:"50%", background:LEVEL_COLORS[lv], display:"inline-block" }}/>
               {LEVEL_LABELS[lv]}
             </span>
           ))}
@@ -288,7 +342,7 @@ function App() {
 
         {/* 그래프 */}
         {tab==="chart" && (
-          <div style={{ background:"white", borderRadius:12, border:"1px solid #f3f4f6", boxShadow:"0 1px 4px rgba(0,0,0,0.05)", padding:16 }}>
+          <div style={{ background:"white", borderRadius:12, border:"1px solid #f3f4f6", padding:16 }}>
             <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16, alignItems:"center" }}>
               <button onClick={toggleAll}
                 style={{ fontSize:11, padding:"4px 12px", borderRadius:20, fontWeight:600, border: allSel?"none":"1px solid #d1d5db", background: allSel?"#374151":"white", color: allSel?"white":"#4b5563", cursor:"pointer" }}>
@@ -304,8 +358,7 @@ function App() {
             </div>
             {selMetrics.length===0
               ? <div style={{ height:200, display:"flex", alignItems:"center", justifyContent:"center", color:"#9ca3af", fontSize:13 }}>항목을 선택하세요</div>
-              : (
-                <ResponsiveContainer width="100%" height={340}>
+              : <ResponsiveContainer width="100%" height={340}>
                   <LineChart data={chartData} margin={{ top:10, right:10, left:-10, bottom:5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
                     <XAxis dataKey="year" tick={{ fontSize:12 }}/>
@@ -315,16 +368,12 @@ function App() {
                     {singleM?.normal[1] && <ReferenceLine y={singleM.normal[1]} stroke="#10b981" strokeDasharray="4 4" label={{ value:"정상상한", fontSize:10, fill:"#10b981" }}/>}
                     {singleM?.normal[0] && <ReferenceLine y={singleM.normal[0]} stroke="#10b981" strokeDasharray="4 4" label={{ value:"정상하한", fontSize:10, fill:"#10b981" }}/>}
                     {selMetrics.map(key => {
-                      const m = METRICS.find(m => m.key===key);
-                      return (
-                        <Line key={key} type="monotone" dataKey={key} name={m.label} stroke={m.color} strokeWidth={2} connectNulls
-                          dot={(props) => React.createElement(CustomDot, { ...props, metricKey:key, stroke:m.color })}
-                          activeDot={{ r:5 }}/>
-                      );
+                      const m = METRICS.find(m=>m.key===key);
+                      return <Line key={key} type="monotone" dataKey={key} name={m.label} stroke={m.color} strokeWidth={2} connectNulls
+                        dot={(props) => React.createElement(CustomDot, {...props, metricKey:key, stroke:m.color})} activeDot={{ r:5 }}/>;
                     })}
                   </LineChart>
                 </ResponsiveContainer>
-              )
             }
           </div>
         )}
@@ -351,15 +400,12 @@ function App() {
                       <MetricLabel metricKey={m.key}>{m.label}{m.unit&&<span style={{ color:"#9ca3af", marginLeft:4 }}>({m.unit})</span>}</MetricLabel>
                     </td>
                     {data.map(d => {
-                      const val = d[m.key];
-                      const lv = getLevel(m.key, val);
-                      const bg = lv===3?"#fef2f2":lv===2?"#fff7ed":lv===1?"#fffbeb":lv===0?"#f0fdf4":"";
-                      const col = lv===3?"#dc2626":lv===2?"#ea580c":lv===1?"#d97706":lv===0?"#16a34a":"#6b7280";
-                      return (
-                        <td key={d.year} style={{ padding:"6px 12px", textAlign:"center", fontWeight:500, background:bg, color:col }}>
-                          {val!=null?val:<span style={{ color:"#d1d5db" }}>–</span>}
-                        </td>
-                      );
+                      const val=d[m.key], lv=getLevel(m.key,val);
+                      const bg=lv===3?"#fef2f2":lv===2?"#fff7ed":lv===1?"#fffbeb":lv===0?"#f0fdf4":"";
+                      const col=lv===3?"#dc2626":lv===2?"#ea580c":lv===1?"#d97706":lv===0?"#16a34a":"#6b7280";
+                      return <td key={d.year} style={{ padding:"6px 12px", textAlign:"center", fontWeight:500, background:bg, color:col }}>
+                        {val!=null?val:<span style={{ color:"#d1d5db" }}>–</span>}
+                      </td>;
                     })}
                   </tr>
                 ))}
@@ -368,24 +414,19 @@ function App() {
           </div>
         )}
 
-        {/* 검진 정보 (하단) */}
+        {/* 검진 정보 하단 */}
         {kpi && (
           <div style={{ background:"white", borderRadius:12, border:"1px solid #f3f4f6", padding:"12px 16px", marginTop:16, fontSize:13 }}>
             <p style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>검진 정보 · {kpiYear}년</p>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 24px", marginBottom:12 }}>
               {[["검진기관","hospital"],["검진일","date"],["판정","judgment"],["의심질환","suspected"],["유질환","disease"],["기타","other"]].map(([label,key]) => (
-                <div key={key}>
-                  <span style={{ fontSize:11, color:"#9ca3af" }}>{label}</span>
-                  <p style={{ fontWeight:500, color:"#374151", margin:"1px 0 6px" }}>{kpi[key]||"–"}</p>
-                </div>
+                <div key={key}><span style={{ fontSize:11, color:"#9ca3af" }}>{label}</span><p style={{ fontWeight:500, color:"#374151", margin:"1px 0 6px" }}>{kpi[key]||"–"}</p></div>
               ))}
             </div>
-            {kpi.opinion && (
-              <div>
-                <span style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.05em" }}>종합소견</span>
-                <div style={{ marginTop:4, background:"#eef2ff", borderRadius:8, padding:"8px 12px", fontSize:12, color:"#3730a3", lineHeight:1.7 }}>{kpi.opinion}</div>
-              </div>
-            )}
+            {kpi.opinion && <div>
+              <span style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase" }}>종합소견</span>
+              <div style={{ marginTop:4, background:"#eef2ff", borderRadius:8, padding:"8px 12px", fontSize:12, color:"#3730a3", lineHeight:1.7 }}>{kpi.opinion}</div>
+            </div>}
           </div>
         )}
       </div>
@@ -394,25 +435,23 @@ function App() {
       {editRow && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50, padding:16 }}>
           <div style={{ background:"white", borderRadius:16, padding:20, width:"100%", maxWidth:360, maxHeight:"80vh", overflowY:"auto" }}>
-            <h2 style={{ fontSize:16, fontWeight:700, marginBottom:16 }}>✏️ {editRow.year}년 데이터 수정</h2>
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {["hospital","date","judgment","suspected","disease","other","opinion"].map(k => (
-                <div key={k} style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <label style={{ fontSize:11, color:"#6b7280", width:80, flexShrink:0 }}>{{ hospital:"검진기관",date:"검진일",judgment:"판정",suspected:"의심질환",disease:"유질환",other:"기타",opinion:"종합소견" }[k]}</label>
-                  <input type="text" value={editRow[k]||""} onChange={e => setEditRow(r => ({...r,[k]:e.target.value}))}
-                    style={{ border:"1px solid #e5e7eb", borderRadius:8, padding:"4px 8px", fontSize:12, width:"100%", outline:"none" }}/>
+            <h2 style={{ fontSize:16, fontWeight:700, marginBottom:16 }}>✏️ {editRow.year}년 수정</h2>
+            {["hospital","date","judgment","suspected","disease","other","opinion"].map(k => (
+              <div key={k} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <label style={{ fontSize:11, color:"#6b7280", width:72, flexShrink:0 }}>{{ hospital:"검진기관",date:"검진일",judgment:"판정",suspected:"의심질환",disease:"유질환",other:"기타",opinion:"종합소견" }[k]}</label>
+                <input type="text" value={editRow[k]||""} onChange={e => setEditRow(r => ({...r,[k]:e.target.value}))}
+                  style={{ border:"1px solid #e5e7eb", borderRadius:8, padding:"4px 8px", fontSize:12, width:"100%", outline:"none" }}/>
+              </div>
+            ))}
+            <div style={{ borderTop:"1px solid #f3f4f6", paddingTop:8, marginTop:4 }}>
+              {METRICS.map(m => (
+                <div key={m.key} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                  <label style={{ fontSize:11, color:"#6b7280", width:72, flexShrink:0 }}>{m.label}</label>
+                  <input type="number" value={editRow[m.key]??""} onChange={e => setEditRow(r => ({...r,[m.key]:e.target.value===""?null:Number(e.target.value)}))}
+                    style={{ border:"1px solid #e5e7eb", borderRadius:8, padding:"4px 8px", fontSize:12, width:"100%", outline:"none" }} placeholder="–"/>
+                  <span style={{ fontSize:11, color:"#9ca3af", width:36, flexShrink:0 }}>{m.unit}</span>
                 </div>
               ))}
-              <div style={{ borderTop:"1px solid #f3f4f6", paddingTop:8 }}>
-                {METRICS.map(m => (
-                  <div key={m.key} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                    <label style={{ fontSize:11, color:"#6b7280", width:80, flexShrink:0 }}>{m.label}</label>
-                    <input type="number" value={editRow[m.key]??""} onChange={e => setEditRow(r => ({...r,[m.key]:e.target.value===""?null:Number(e.target.value)}))}
-                      style={{ border:"1px solid #e5e7eb", borderRadius:8, padding:"4px 8px", fontSize:12, width:"100%", outline:"none" }} placeholder="–"/>
-                    <span style={{ fontSize:11, color:"#9ca3af", width:36, flexShrink:0 }}>{m.unit}</span>
-                  </div>
-                ))}
-              </div>
             </div>
             <div style={{ display:"flex", gap:8, marginTop:16 }}>
               <button onClick={saveEdit} style={{ flex:1, background:"#4f46e5", color:"white", border:"none", borderRadius:8, padding:"8px 0", fontSize:13, fontWeight:500, cursor:"pointer" }}>저장</button>
@@ -421,8 +460,33 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* 초기화 확인 모달 */}
+      {confirmReset && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50, padding:16 }}>
+          <div style={{ background:"white", borderRadius:16, padding:24, width:"100%", maxWidth:320, textAlign:"center" }}>
+            <div style={{ fontSize:36, marginBottom:12 }}>⚠️</div>
+            <h2 style={{ fontSize:16, fontWeight:700, marginBottom:8 }}>데이터를 초기화할까요?</h2>
+            <p style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>저장된 모든 건강검진 데이터가 삭제됩니다.</p>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setConfirmReset(false)} style={{ flex:1, background:"#f3f4f6", color:"#4b5563", border:"none", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:500, cursor:"pointer" }}>취소</button>
+              <button onClick={handleReset} style={{ flex:1, background:"#ef4444", color:"white", border:"none", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:500, cursor:"pointer" }}>삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+// ── 루트 ─────────────────────────────────────────────────
+function App() {
+  const [data, setData] = useState(() => loadData());
+
+  if (!data.length) {
+    return <Onboarding onStart={d => setData(d)}/>;
+  }
+  return <Dashboard data={data} onReset={() => setData([])}/>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
