@@ -128,9 +128,26 @@ const PROMPT = `이 건강검진 결과 이미지에서 항목을 추출해서 J
 
 async function extractFromImage(file) {
   const dataURL = await new Promise((res,rej) => { const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
-  const resp = await puter.ai.chat(PROMPT, dataURL, { model:"claude-sonnet-4-20250514" });
-  const text = typeof resp === "string" ? resp : (resp?.message?.content?.[0]?.text || resp?.text || JSON.stringify(resp));
-  return JSON.parse(text.replace(/```json|```/g,"").trim());
+  const resp = await puter.ai.chat(
+    [{ role:"user", content:[
+      { type:"image_url", image_url:{ url: dataURL } },
+      { type:"text", text: PROMPT }
+    ]}],
+    { model:"claude-sonnet-4-20250514" }
+  );
+  // 응답 구조 최대한 커버
+  let text = "";
+  if (typeof resp === "string") text = resp;
+  else if (resp?.message?.content) {
+    const c = resp.message.content;
+    text = typeof c === "string" ? c : (Array.isArray(c) ? c.map(b => b.text||"").join("") : JSON.stringify(c));
+  } else if (resp?.text) text = resp.text;
+  else text = JSON.stringify(resp);
+  console.log("Puter raw response:", text);
+  const clean = text.replace(/```json|```/g,"").trim();
+  const jsonMatch = clean.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("JSON not found in response");
+  return JSON.parse(jsonMatch[0]);
 }
 
 // ── 온보딩 화면 ──────────────────────────────────────────
