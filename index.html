@@ -3,532 +3,561 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>건강검진 트래커 - 멀티연도 OCR</title>
-
+<title>건강검진 트래커</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.1.9/Recharts.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet"/>
-
 <style>
-body{
-  font-family:'Segoe UI',sans-serif;
-  background:#f3f4f6;
-  margin:0;
-}
-
-.card{
-  background:white;
-  border-radius:16px;
-  padding:20px;
-  box-shadow:0 2px 12px rgba(0,0,0,0.06);
-}
-
-.upload-zone{
-  border:2px dashed #6366f1;
-  border-radius:16px;
-  padding:40px;
-  text-align:center;
-  background:white;
-  cursor:pointer;
-}
-
-.metric{
-  padding:12px;
-  border-radius:12px;
-  background:#f9fafb;
-  border:1px solid #e5e7eb;
-}
-
-pre{
-  white-space:pre-wrap;
-  word-break:break-word;
-  font-size:12px;
-}
+  body { font-family:'Segoe UI',sans-serif; background:#f9fafb; margin:0; }
+  .upload-zone { border:2px dashed #c7d2fe; border-radius:16px; transition:all 0.2s; }
+  .upload-zone:hover, .upload-zone.drag { border-color:#6366f1; background:#eef2ff; }
+  .tooltip-arrow { width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:6px solid #1f2937; position:absolute; top:100%; left:16px; }
 </style>
 </head>
-
 <body>
 <div id="root"></div>
-
 <script type="text/babel">
+const { useState, useRef, useEffect } = React;
+const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } = Recharts;
 
-const {
-  useState,
-  useRef
-} = React;
-
-const {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend
-} = Recharts;
+const STORAGE_KEY = "health_tracker_v4";
 
 const METRICS = [
-  ["weight","체중","kg","#6366f1"],
-  ["bmi","BMI","","#8b5cf6"],
-  ["waist","허리둘레","cm","#ec4899"],
-  ["sbp","수축기혈압","mmHg","#ef4444"],
-  ["dbp","이완기혈압","mmHg","#f97316"],
-  ["glucose","혈당","mg/dL","#f59e0b"],
-  ["cholesterol","총콜레스테롤","mg/dL","#10b981"],
-  ["hdl","HDL","mg/dL","#06b6d4"],
-  ["ldl","LDL","mg/dL","#3b82f6"],
-  ["triglyceride","중성지방","mg/dL","#84cc16"],
-  ["creatinine","크레아티닌","mg/dL","#14b8a6"],
-  ["gfr","GFR","mL/min","#0ea5e9"],
-  ["ast","AST","IU/L","#f43f5e"],
-  ["alt","ALT","IU/L","#d946ef"],
-  ["ggt","감마GTP","IU/L","#a855f7"],
+  { key:"weight",  label:"체중",       unit:"kg",     normal:[null,80],  thresholds:[80,85,90],   color:"#6366f1", desc:"몸의 총 무게. 과체중은 대사질환·관절 부담을 높입니다." },
+  { key:"bmi",     label:"BMI",        unit:"",       normal:[18.5,24.9],thresholds:[23,25,30],   color:"#8b5cf6", desc:"체질량지수(체중÷키²). 정상 18.5–22.9, 과체중 23–24.9, 비만 25↑" },
+  { key:"waist",   label:"허리둘레",   unit:"cm",     normal:[null,85],  thresholds:[85,90,95],   color:"#a855f7", desc:"복부비만 지표. 한국 남성 정상 기준 90cm 미만." },
+  { key:"sbp",     label:"수축기혈압", unit:"mmHg",   normal:[null,120], thresholds:[120,130,140],color:"#ef4444", desc:"심장 수축 시 혈관 압력(위 혈압). 정상 120 미만, 고혈압 140↑" },
+  { key:"dbp",     label:"이완기혈압", unit:"mmHg",   normal:[null,80],  thresholds:[80,90,100],  color:"#f97316", desc:"심장 이완 시 혈관 압력(아래 혈압). 정상 80 미만, 고혈압 90↑" },
+  { key:"glucose", label:"공복혈당",   unit:"mg/dL",  normal:[null,99],  thresholds:[100,110,126],color:"#f59e0b", desc:"8시간 이상 공복 후 혈당. 정상 100 미만, 당뇨 126↑" },
+  { key:"cholesterol",label:"총콜레스테롤",unit:"mg/dL",normal:[null,199],thresholds:[200,220,240],color:"#10b981",desc:"혈액 내 총 콜레스테롤. 정상 200 미만, 고위험 240↑" },
+  { key:"hdl",     label:"HDL",        unit:"mg/dL",  normal:[40,null],  thresholds:[40,35,30],   color:"#06b6d4", desc:"좋은 콜레스테롤. 높을수록 좋음. 정상 40↑", reverse:true },
+  { key:"ldl",     label:"LDL",        unit:"mg/dL",  normal:[null,129], thresholds:[130,150,160],color:"#3b82f6", desc:"나쁜 콜레스테롤. 혈관 벽에 쌓여 동맥경화 유발. 정상 130 미만" },
+  { key:"triglyceride",label:"중성지방",unit:"mg/dL", normal:[null,149], thresholds:[150,175,200],color:"#84cc16", desc:"혈액 내 지방. 과잉 탄수화물·알코올 섭취 시 상승. 정상 150 미만" },
+  { key:"gfr",     label:"GFR",        unit:"mL/min", normal:[60,null],  thresholds:[60,45,30],   color:"#14b8a6", desc:"신사구체여과율. 신장 기능 지표. 정상 60↑, 60 미만 시 만성신장질환 의심", reverse:true },
+  { key:"ast",     label:"AST(GOT)",   unit:"IU/L",   normal:[null,40],  thresholds:[40,50,80],   color:"#f43f5e", desc:"간·심근 효소. 상승 시 간 손상 의심. 정상 40 이하" },
+  { key:"alt",     label:"ALT(GPT)",   unit:"IU/L",   normal:[null,35],  thresholds:[35,45,80],   color:"#ec4899", desc:"간 특이 효소. 지방간·간염 시 상승. 정상 35 이하" },
+  { key:"ggt",     label:"감마GTP",    unit:"IU/L",   normal:[null,50],  thresholds:[50,75,100],  color:"#d946ef", desc:"간·담도 효소. 음주·지방간 시 상승. 정상 50 이하" },
 ];
 
-async function preprocessImage(file){
+const KPI_METRICS = ["weight","bmi","sbp","glucose","cholesterol","ast"];
+const FALLBACK_METRICS = ["sbp","glucose","cholesterol","bmi","ast","alt"];
+const LEVEL_COLORS = ["#22c55e","#fbbf24","#f97316","#ef4444"];
+const LEVEL_LABELS = ["정상","주의","위험","고위험"];
+const LEVEL_BADGE = ["bg-green-100 text-green-700","bg-yellow-100 text-yellow-700","bg-orange-100 text-orange-700","bg-red-100 text-red-700"];
 
-  return new Promise((resolve)=>{
+function getLevel(key, val) {
+  if (val == null) return -1;
+  const m = METRICS.find(m => m.key === key);
+  if (!m) return 0;
+  const [t1,t2,t3] = m.thresholds;
+  if (m.reverse) return val>=t1?0:val>=t2?1:val>=t3?2:3;
+  return val<t1?0:val<t2?1:val<t3?2:3;
+}
+function getDefaultMetrics(data) {
+  if (!data.length) return FALLBACK_METRICS;
+  const latest = data.reduce((a,b) => a.year>b.year?a:b);
+  const abnormal = METRICS.filter(m => latest[m.key]!=null && getLevel(m.key,latest[m.key])>=1).map(m=>m.key);
+  return abnormal.length>0 ? abnormal : FALLBACK_METRICS;
+}
+function loadData() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]"); } catch { return []; } }
+function saveData(d) { try { localStorage.setItem(STORAGE_KEY,JSON.stringify(d)); } catch {} }
 
+// ── OCR 핵심 함수 ──────────────────────────────────────
+async function preprocessImage(file) {
+  return new Promise(resolve => {
     const img = new Image();
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
-
-    img.onload = ()=>{
-
+    img.onload = () => {
       const scale = 2;
-
       canvas.width = img.width * scale;
       canvas.height = img.height * scale;
-
-      ctx.drawImage(
-        img,
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-
-      const imageData = ctx.getImageData(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-
-      const data = imageData.data;
-
-      for(let i=0;i<data.length;i+=4){
-
-        const gray =
-          data[i] * 0.3 +
-          data[i+1] * 0.59 +
-          data[i+2] * 0.11;
-
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
+      const d = imageData.data;
+      for (let i=0;i<d.length;i+=4) {
+        const gray = d[i]*0.3 + d[i+1]*0.59 + d[i+2]*0.11;
         const v = gray > 170 ? 255 : 0;
-
-        data[i] = v;
-        data[i+1] = v;
-        data[i+2] = v;
+        d[i]=d[i+1]=d[i+2]=v;
       }
-
       ctx.putImageData(imageData,0,0);
-
       canvas.toBlob(resolve,"image/png");
     };
-
     img.src = URL.createObjectURL(file);
   });
 }
 
-function extractNumber(text, regex){
-
+function extractNum(text, regex) {
   const m = text.match(regex);
-
-  return m
-    ? Number(m[m.length - 1])
-    : null;
+  return m ? Number(m[m.length-1]) : null;
 }
 
-function parseHealthText(text){
-
+function parseHealthText(text) {
   const yearMatch = text.match(/20\d{2}/);
-
-  const bpMatch = text.match(
-    /혈압[^0-9]*([0-9]{2,3})\s*\/\s*([0-9]{2,3})/
-  );
+  const hospitalMatch = text.match(/기관명[^\n]*\n?([^\n]+)/);
+  const dateMatch = text.match(/검진일[^\n]*\n?([^\n]+)/);
+  const judgmentMatch = text.match(/판정[^\n]*\n?([^\n]+)/);
+  const suspectedMatch = text.match(/의심질환[^\n]*\n?([^\n]+)/);
+  const diseaseMatch = text.match(/유질환[^\n]*\n?([^\n]+)/);
+  const otherMatch = text.match(/기타[^\n]*\n?([^\n]+)/);
+  const opinionMatch = text.match(/종합소견[^\n]*\n?([^\s\S]{0,200})/);
+  const bpMatch = text.match(/혈압[^0-9]*([0-9]{2,3})\s*[\/｜|]\s*([0-9]{2,3})/);
 
   return {
-
-    year: yearMatch
-      ? Number(yearMatch[0])
-      : new Date().getFullYear(),
-
-    weight: extractNumber(text,/체중[^0-9]*([0-9.]+)/),
-    bmi: extractNumber(text,/BMI[^0-9]*([0-9.]+)/i),
-    waist: extractNumber(text,/허리둘레[^0-9]*([0-9.]+)/),
-
+    year: yearMatch ? Number(yearMatch[0]) : new Date().getFullYear(),
+    hospital: hospitalMatch ? hospitalMatch[1].trim() : "",
+    date: dateMatch ? dateMatch[1].trim() : "",
+    judgment: judgmentMatch ? judgmentMatch[1].trim() : "",
+    suspected: suspectedMatch ? suspectedMatch[1].trim() : "",
+    disease: diseaseMatch ? diseaseMatch[1].trim() : "",
+    other: otherMatch ? otherMatch[1].trim() : "",
+    opinion: opinionMatch ? opinionMatch[1].trim() : "",
+    weight: extractNum(text, /체중[^0-9]*([0-9.]+)/),
+    bmi: extractNum(text, /BMI[^0-9]*([0-9.]+)/i),
+    waist: extractNum(text, /허리둘레[^0-9]*([0-9.]+)/),
     sbp: bpMatch ? Number(bpMatch[1]) : null,
     dbp: bpMatch ? Number(bpMatch[2]) : null,
-
-    glucose: extractNumber(
-      text,
-      /(공복혈당|혈당)[^0-9]*([0-9.]+)/
-    ),
-
-    cholesterol: extractNumber(
-      text,
-      /총콜레스테롤[^0-9]*([0-9.]+)/
-    ),
-
-    hdl: extractNumber(text,/HDL[^0-9]*([0-9.]+)/i),
-    ldl: extractNumber(text,/LDL[^0-9]*([0-9.]+)/i),
-
-    triglyceride: extractNumber(
-      text,
-      /중성지방[^0-9]*([0-9.]+)/
-    ),
-
-    creatinine: extractNumber(
-      text,
-      /크레아티닌[^0-9]*([0-9.]+)/
-    ),
-
-    gfr: extractNumber(
-      text,
-      /(GFR|사구체여과율)[^0-9]*([0-9.]+)/
-    ),
-
-    ast: extractNumber(text,/AST[^0-9]*([0-9.]+)/),
-    alt: extractNumber(text,/ALT[^0-9]*([0-9.]+)/),
-
-    ggt: extractNumber(
-      text,
-      /(감마GTP|γ-GTP)[^0-9]*([0-9.]+)/
-    ),
-
-    rawText: text
+    glucose: extractNum(text, /(공복혈당|혈당)[^0-9]*([0-9.]+)/),
+    cholesterol: extractNum(text, /총콜레스테롤[^0-9]*([0-9.]+)/),
+    hdl: extractNum(text, /HDL[^0-9]*([0-9.]+)/i),
+    ldl: extractNum(text, /LDL[^0-9]*([0-9.]+)/i),
+    triglyceride: extractNum(text, /중성지방[^0-9]*([0-9.]+)/),
+    creatinine: extractNum(text, /크레아티닌[^0-9]*([0-9.]+)/),
+    gfr: extractNum(text, /(GFR|사구체여과율)[^0-9]*([0-9.]+)/i),
+    ast: extractNum(text, /AST[^0-9]*([0-9.]+)/),
+    alt: extractNum(text, /ALT[^0-9]*([0-9.]+)/),
+    ggt: extractNum(text, /(감마.?GTP|γ.GTP)[^0-9]*([0-9.]+)/),
   };
 }
 
-async function extractFromImage(file){
-
+async function ocrFile(file, onProgress) {
   const processed = await preprocessImage(file);
-
-  const result = await Tesseract.recognize(
-    processed,
-    "kor+eng",
-    {
-      logger:(m)=>console.log(m)
-    }
-  );
-
-  const text = result.data.text;
-
-  const parsed = parseHealthText(text);
-
-  parsed.confidence = result.data.confidence;
-
-  return parsed;
+  const result = await Tesseract.recognize(processed, "kor+eng", {
+    logger: m => { if (m.status==="recognizing text" && onProgress) onProgress(Math.round(m.progress*100)); }
+  });
+  return parseHealthText(result.data.text);
 }
 
-function App(){
+// ── 공통 컴포넌트 ──────────────────────────────────────
+function StatusBadge({ level }) {
+  if (level<0) return <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">없음</span>;
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LEVEL_BADGE[level]}`}>{LEVEL_LABELS[level]}</span>;
+}
 
-  const [data,setData] = useState([]);
-  const [loading,setLoading] = useState(false);
-  const [progress,setProgress] = useState("");
-
-  const [selectedMetric,setSelectedMetric] =
-    useState("glucose");
-
-  const inputRef = useRef(null);
-
-  async function handleFiles(files){
-
-    try{
-
-      setLoading(true);
-
-      const results = [];
-
-      for(let i=0;i<files.length;i++){
-
-        setProgress(
-          `${i+1} / ${files.length} 분석 중`
-        );
-
-        const parsed =
-          await extractFromImage(files[i]);
-
-        results.push(parsed);
-      }
-
-      results.sort((a,b)=>a.year-b.year);
-
-      setData(results);
-
-    }catch(err){
-
-      console.error(err);
-
-      alert("OCR 분석 실패");
-
-    }finally{
-
-      setLoading(false);
-      setProgress("");
-    }
+const ttState = { key:null, hide:null };
+function MetricLabel({ metricKey, children }) {
+  const [vis, setVis] = useState(false);
+  const timerRef = useRef(null);
+  const m = METRICS.find(m=>m.key===metricKey);
+  function show(e) {
+    e.stopPropagation();
+    if (ttState.key && ttState.key!==metricKey && ttState.hide) { ttState.hide(false); clearTimeout(timerRef.current); }
+    ttState.key=metricKey; ttState.hide=setVis;
+    setVis(true);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(()=>{ setVis(false); ttState.key=null; }, 5000);
   }
-
-  const selectedMetricObj =
-    METRICS.find(m=>m[0]===selectedMetric);
-
   return (
+    <span style={{ position:"relative", display:"inline-flex", alignItems:"center", gap:4, cursor:"pointer", userSelect:"none" }} onClick={show}>
+      {children}
+      <span style={{ color:"#d1d5db", fontSize:11 }}>ℹ</span>
+      {vis && m?.desc && (
+        <span style={{ position:"absolute", bottom:"100%", left:0, marginBottom:8, width:220, background:"#1f2937", color:"white", fontSize:11, borderRadius:12, padding:"8px 12px", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", lineHeight:1.6, zIndex:100, pointerEvents:"none", whiteSpace:"normal" }}>
+          {m.desc}<span className="tooltip-arrow"/>
+        </span>
+      )}
+    </span>
+  );
+}
 
-    <div className="max-w-6xl mx-auto p-4">
+function CustomDot({ cx, cy, value, metricKey, stroke }) {
+  const level = getLevel(metricKey, value);
+  if (value==null||cx==null||cy==null) return null;
+  return <circle cx={cx} cy={cy} r={3.5} fill={level<0?"transparent":LEVEL_COLORS[level]} stroke={stroke} strokeWidth={2}/>;
+}
 
-      <div className="card mb-4">
-
-        <h1 className="text-3xl font-bold text-indigo-600 mb-2">
-          🏥 건강검진 트래커
-        </h1>
-
-        <p className="text-gray-500 mb-6">
-          여러 연도 건강검진표를 업로드하면
-          변화 추이를 자동 분석합니다
-        </p>
-
-        <div
-          className="upload-zone"
-          onClick={()=>inputRef.current.click()}
-        >
-
-          {
-            loading
-            ? <div>
-                <div className="text-4xl mb-3">⏳</div>
-                <div className="font-semibold">
-                  {progress}
-                </div>
-              </div>
-
-            : <div>
-                <div className="text-4xl mb-3">
-                  📄
-                </div>
-
-                <div className="font-semibold">
-                  여러 연도 이미지를 선택하세요
-                </div>
-
-                <div className="text-sm text-gray-500 mt-2">
-                  여러 파일 동시 업로드 가능
-                </div>
-              </div>
-          }
-
-        </div>
-
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          accept="image/*"
-          capture="environment"
-          style={{display:"none"}}
-          onChange={(e)=>{
-            handleFiles(
-              [...e.target.files]
-            );
-          }}
-        />
-
-      </div>
-
-      {
-        data.length > 0 &&
-
-        <div className="space-y-4">
-
-          <div className="card">
-
-            <div className="flex flex-wrap gap-2 mb-4">
-
-              {
-                METRICS.map(([key,label])=>(
-
-                  <button
-                    key={key}
-                    onClick={()=>
-                      setSelectedMetric(key)
-                    }
-                    className={
-                      "px-3 py-2 rounded-full text-sm " +
-                      (
-                        selectedMetric===key
-                        ? "bg-indigo-600 text-white"
-                        : "bg-gray-100 text-gray-600"
-                      )
-                    }
-                  >
-                    {label}
-                  </button>
-                ))
-              }
-
-            </div>
-
-            <h2 className="text-xl font-bold mb-4">
-              📈 {selectedMetricObj[1]} 변화 추이
-            </h2>
-
-            <ResponsiveContainer width="100%" height={350}>
-
-              <LineChart data={data}>
-
-                <CartesianGrid strokeDasharray="3 3"/>
-
-                <XAxis dataKey="year"/>
-
-                <YAxis/>
-
-                <Tooltip/>
-
-                <Legend/>
-
-                <Line
-                  type="monotone"
-                  dataKey={selectedMetric}
-                  stroke={selectedMetricObj[3]}
-                  strokeWidth={3}
-                />
-
-              </LineChart>
-
-            </ResponsiveContainer>
-
-          </div>
-
-          <div className="card">
-
-            <h2 className="text-xl font-bold mb-4">
-              📊 연도별 데이터
-            </h2>
-
-            <div className="overflow-auto">
-
-              <table className="min-w-full text-sm">
-
-                <thead>
-
-                  <tr className="border-b">
-
-                    <th className="text-left p-2">
-                      항목
-                    </th>
-
-                    {
-                      data.map(d=>(
-
-                        <th
-                          key={d.year}
-                          className="p-2"
-                        >
-                          {d.year}
-                        </th>
-                      ))
-                    }
-
-                  </tr>
-
-                </thead>
-
-                <tbody>
-
-                  {
-                    METRICS.map(([key,label,unit])=>(
-
-                      <tr
-                        key={key}
-                        className="border-b"
-                      >
-
-                        <td className="p-2 font-semibold">
-                          {label}
-                        </td>
-
-                        {
-                          data.map(d=>(
-
-                            <td
-                              key={d.year}
-                              className="p-2 text-center"
-                            >
-                              {d[key] ?? "—"}
-                              <span className="text-gray-400 text-xs ml-1">
-                                {unit}
-                              </span>
-                            </td>
-                          ))
-                        }
-
-                      </tr>
-                    ))
-                  }
-
-                </tbody>
-
-              </table>
-
-            </div>
-
-          </div>
-
-          <div className="card">
-
-            <h2 className="text-xl font-bold mb-4">
-              🔍 OCR 원문
-            </h2>
-
-            {
-              data.map((d,i)=>(
-
-                <details
-                  key={i}
-                  className="mb-4"
-                >
-
-                  <summary className="cursor-pointer font-semibold">
-                    {d.year}년 원문
-                    (정확도 {Math.round(d.confidence)}%)
-                  </summary>
-
-                  <pre className="mt-2">
-                    {d.rawText}
-                  </pre>
-
-                </details>
-              ))
-            }
-
-          </div>
-
-        </div>
-      }
-
+function CustomTooltip({ active, payload, label }) {
+  if (!active||!payload?.length) return null;
+  return (
+    <div style={{ background:"white", border:"1px solid #e5e7eb", borderRadius:12, padding:"10px 14px", fontSize:13, boxShadow:"0 4px 16px rgba(0,0,0,0.1)" }}>
+      <p style={{ fontWeight:700, color:"#374151", marginBottom:4 }}>{label}년</p>
+      {payload.map((p,i) => {
+        const lv = getLevel(p.dataKey, p.value);
+        return <p key={i} style={{ color:p.color, margin:"2px 0" }}>{p.name}: <strong>{p.value}</strong>{lv>=0&&<span style={{ opacity:0.7, fontSize:11 }}> ({LEVEL_LABELS[lv]})</span>}</p>;
+      })}
     </div>
   );
 }
 
-ReactDOM.createRoot(
-  document.getElementById("root")
-).render(<App />);
+// ── 온보딩 ────────────────────────────────────────────
+function Onboarding({ onStart }) {
+  const [dragging, setDragging] = useState(false);
+  const [files, setFiles] = useState([]);       // {file, status, progress, result}
+  const [processing, setProcessing] = useState(false);
+  const fileRef = useRef(null);
 
+  async function processFiles(fileList) {
+    const items = [...fileList].filter(f=>f.type.startsWith("image/")).map(f=>({ file:f, status:"pending", progress:0, result:null }));
+    if (!items.length) return;
+    setFiles(items);
+    setProcessing(true);
+
+    const results = [];
+    for (let i=0; i<items.length; i++) {
+      setFiles(prev => prev.map((it,idx) => idx===i ? {...it, status:"processing"} : it));
+      try {
+        const parsed = await ocrFile(items[i].file, pct => {
+          setFiles(prev => prev.map((it,idx) => idx===i ? {...it, progress:pct} : it));
+        });
+        results.push(parsed);
+        setFiles(prev => prev.map((it,idx) => idx===i ? {...it, status:"done", progress:100, result:parsed} : it));
+      } catch {
+        setFiles(prev => prev.map((it,idx) => idx===i ? {...it, status:"error"} : it));
+      }
+    }
+
+    if (results.length) {
+      const sorted = results.sort((a,b)=>a.year-b.year);
+      saveData(sorted);
+      setTimeout(()=>onStart(sorted), 600);
+    }
+    setProcessing(false);
+  }
+
+  function onDrop(e) { e.preventDefault(); setDragging(false); processFiles(e.dataTransfer.files); }
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, background:"linear-gradient(135deg,#eef2ff 0%,#f9fafb 60%)" }}>
+      <div style={{ maxWidth:500, width:"100%" }}>
+        <div style={{ textAlign:"center", marginBottom:32 }}>
+          <div style={{ fontSize:48, marginBottom:8 }}>🏥</div>
+          <h1 style={{ fontSize:26, fontWeight:800, color:"#4f46e5", margin:0 }}>건강검진 트래커</h1>
+          <p style={{ color:"#6b7280", marginTop:8, fontSize:13 }}>건강검진 결과 이미지를 올리면 OCR로 자동 분석해 연도별 추이를 보여드립니다.</p>
+          <p style={{ color:"#9ca3af", marginTop:4, fontSize:12 }}>처음 사용 시 언어 데이터 로딩에 잠시 시간이 걸릴 수 있습니다.</p>
+        </div>
+
+        <div className={`upload-zone ${dragging?"drag":""}`}
+          style={{ background:"white", padding:36, textAlign:"center", cursor:processing?"default":"pointer", boxShadow:"0 2px 12px rgba(0,0,0,0.06)", marginBottom:16 }}
+          onClick={()=>!processing&&fileRef.current.click()}
+          onDragOver={e=>{e.preventDefault();setDragging(true);}}
+          onDragLeave={()=>setDragging(false)}
+          onDrop={onDrop}>
+          <div style={{ fontSize:38, marginBottom:10 }}>📂</div>
+          <p style={{ fontWeight:600, color:"#374151", fontSize:14, margin:0 }}>검진 결과 이미지를 드래그하거나 클릭해서 선택</p>
+          <p style={{ color:"#9ca3af", fontSize:12, marginTop:6 }}>여러 연도 이미지를 한번에 올려도 됩니다</p>
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>processFiles(e.target.files)}/>
+
+        {/* 파일별 진행 상태 */}
+        {files.length>0 && (
+          <div style={{ background:"white", borderRadius:16, padding:16, boxShadow:"0 2px 12px rgba(0,0,0,0.06)" }}>
+            {files.map((it,i) => (
+              <div key={i} style={{ marginBottom:10 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:4 }}>
+                  <span style={{ color:"#374151", fontWeight:500 }}>{it.file.name}</span>
+                  <span style={{ color: it.status==="done"?"#16a34a":it.status==="error"?"#ef4444":"#6366f1" }}>
+                    {it.status==="pending"?"대기중":it.status==="processing"?`${it.progress}%`:it.status==="done"?`✅ ${it.result?.year}년`:"❌ 실패"}
+                  </span>
+                </div>
+                <div style={{ height:4, background:"#f3f4f6", borderRadius:4, overflow:"hidden" }}>
+                  <div style={{ height:"100%", width:`${it.progress}%`, background: it.status==="done"?"#22c55e":it.status==="error"?"#ef4444":"#6366f1", transition:"width 0.3s" }}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {loadData().length>0 && !processing && (
+          <button onClick={()=>onStart(loadData())}
+            style={{ width:"100%", marginTop:16, padding:"12px 0", background:"#4f46e5", color:"white", border:"none", borderRadius:12, fontSize:14, fontWeight:600, cursor:"pointer" }}>
+            📊 저장된 데이터 이어보기 ({loadData().length}개 연도)
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── 대시보드 ──────────────────────────────────────────
+function Dashboard({ data:initData, onReset }) {
+  const [data, setData] = useState(initData);
+  const [selMetrics, setSelMetrics] = useState(()=>getDefaultMetrics(initData));
+  const [tab, setTab] = useState("chart");
+  const [kpiYear, setKpiYear] = useState(()=>Math.max(...initData.map(d=>d.year)));
+  const [editRow, setEditRow] = useState(null);
+  const [uploadState, setUploadState] = useState(null); // {progress, status}
+  const [confirmReset, setConfirmReset] = useState(false);
+  const tableRef = useRef(null);
+  const fileRef = useRef(null);
+
+  const years = data.map(d=>d.year).sort((a,b)=>a-b);
+  const kpi = data.find(d=>d.year===kpiYear)||data[data.length-1];
+  const prev = data.find(d=>d.year===kpiYear-1);
+  const allSel = selMetrics.length===METRICS.length;
+
+  useEffect(()=>{ saveData(data); }, [data]);
+  useEffect(()=>{ if (tab==="table"&&tableRef.current) setTimeout(()=>{ tableRef.current.scrollLeft=tableRef.current.scrollWidth; },50); }, [tab]);
+
+  function toggleAll() { setSelMetrics(allSel?[]:METRICS.map(m=>m.key)); }
+  function toggleMetric(k) { setSelMetrics(s=>s.includes(k)?s.filter(x=>x!==k):[...s,k]); }
+
+  async function handleUpload(e) {
+    const file = e.target.files[0]; if (!file) return;
+    setUploadState({ progress:0, status:"processing" });
+    try {
+      const parsed = await ocrFile(file, pct=>setUploadState({ progress:pct, status:"processing" }));
+      setData(prev => {
+        const next = prev.find(d=>d.year===parsed.year) ? prev.map(d=>d.year===parsed.year?{...d,...parsed}:d) : [...prev,parsed].sort((a,b)=>a.year-b.year);
+        return next;
+      });
+      setKpiYear(parsed.year);
+      setUploadState({ progress:100, status:"done" });
+      setTimeout(()=>setUploadState(null), 2000);
+    } catch {
+      setUploadState({ progress:0, status:"error" });
+      setTimeout(()=>setUploadState(null), 2000);
+    }
+    fileRef.current.value="";
+  }
+
+  function saveEdit() { setData(prev=>prev.map(d=>d.year===editRow.year?editRow:d)); setEditRow(null); }
+
+  const chartData = data.map(d=>{ const o={year:d.year}; selMetrics.forEach(k=>{o[k]=d[k];}); return o; });
+  const singleM = selMetrics.length===1?METRICS.find(m=>m.key===selMetrics[0]):null;
+
+  const S = (v) => ({ style:v }); // inline style shorthand
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#f9fafb" }}>
+      {/* 헤더 */}
+      <div style={{ background:"white", borderBottom:"1px solid #e5e7eb", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div>
+          <h1 style={{ fontSize:18, fontWeight:700, color:"#4f46e5", margin:0 }}>🏥 건강검진 트래커</h1>
+          <p style={{ fontSize:11, color:"#9ca3af", margin:"2px 0 0" }}>{years[0]} – {years[years.length-1]} · {data.length}개 연도</p>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {uploadState && (
+            <div style={{ fontSize:11, color: uploadState.status==="done"?"#16a34a":uploadState.status==="error"?"#ef4444":"#6366f1" }}>
+              {uploadState.status==="processing"?`OCR 분석 중 ${uploadState.progress}%`:uploadState.status==="done"?"✅ 추가 완료":"❌ 실패"}
+            </div>
+          )}
+          <button onClick={()=>fileRef.current.click()} disabled={uploadState?.status==="processing"}
+            style={{ background:"#4f46e5", color:"white", border:"none", borderRadius:8, padding:"7px 12px", fontSize:12, cursor:"pointer", opacity:uploadState?.status==="processing"?0.5:1 }}>
+            📷 이미지 추가
+          </button>
+          <button onClick={()=>setConfirmReset(true)}
+            style={{ background:"#f3f4f6", color:"#6b7280", border:"none", borderRadius:8, padding:"7px 12px", fontSize:12, cursor:"pointer" }}>
+            🔄 초기화
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display:"none" }} onChange={handleUpload}/>
+        </div>
+      </div>
+
+      <div style={{ maxWidth:960, margin:"0 auto", padding:"16px 12px" }}>
+        {/* 연도 탭 */}
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 }}>
+          {years.map(y=>(
+            <button key={y} onClick={()=>setKpiYear(y)}
+              style={{ padding:"4px 12px", borderRadius:20, fontSize:12, fontWeight:600, border:kpiYear===y?"none":"1px solid #e5e7eb", background:kpiYear===y?"#4f46e5":"white", color:kpiYear===y?"white":"#6b7280", cursor:"pointer" }}>
+              {y}년
+            </button>
+          ))}
+        </div>
+
+        {/* KPI 카드 */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:16 }}>
+          {KPI_METRICS.map(key=>{
+            const m=METRICS.find(m=>m.key===key);
+            const val=kpi?.[key], pval=prev?.[key];
+            const diff=val!=null&&pval!=null?(val-pval).toFixed(1):null;
+            const lv=getLevel(key,val);
+            return (
+              <div key={key} style={{ background:"white", borderRadius:12, padding:12, border:"1px solid #f3f4f6", boxShadow:"0 1px 4px rgba(0,0,0,0.05)" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
+                  <MetricLabel metricKey={key}><span style={{ fontSize:11, color:"#9ca3af" }}>{m.label}</span></MetricLabel>
+                  <StatusBadge level={lv}/>
+                </div>
+                <div style={{ fontSize:22, fontWeight:700, color:m.color }}>{val??"-"}<span style={{ fontSize:12, fontWeight:400, color:"#9ca3af", marginLeft:4 }}>{m.unit}</span></div>
+                {diff!=null&&<div style={{ fontSize:11, marginTop:2, color:parseFloat(diff)>0?"#f87171":parseFloat(diff)<0?"#34d399":"#9ca3af" }}>
+                  {parseFloat(diff)>0?"▲":parseFloat(diff)<0?"▼":"–"} {Math.abs(diff)} vs {kpiYear-1}년
+                </div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 범례 */}
+        <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:12, fontSize:11, color:"#6b7280" }}>
+          <span style={{ fontWeight:600, color:"#374151" }}>점 색상:</span>
+          {[0,1,2,3].map(lv=>(
+            <span key={lv} style={{ display:"flex", alignItems:"center", gap:4 }}>
+              <span style={{ width:10, height:10, borderRadius:"50%", background:LEVEL_COLORS[lv], display:"inline-block" }}/>
+              {LEVEL_LABELS[lv]}
+            </span>
+          ))}
+        </div>
+
+        {/* 탭 */}
+        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+          {["chart","table"].map(t=>(
+            <button key={t} onClick={()=>setTab(t)}
+              style={{ padding:"6px 16px", borderRadius:8, fontSize:13, fontWeight:500, border:tab===t?"none":"1px solid #e5e7eb", background:tab===t?"#4f46e5":"white", color:tab===t?"white":"#6b7280", cursor:"pointer" }}>
+              {t==="chart"?"📈 그래프":"📋 데이터 표"}
+            </button>
+          ))}
+        </div>
+
+        {/* 그래프 */}
+        {tab==="chart" && (
+          <div style={{ background:"white", borderRadius:12, border:"1px solid #f3f4f6", padding:16 }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16, alignItems:"center" }}>
+              <button onClick={toggleAll}
+                style={{ fontSize:11, padding:"4px 12px", borderRadius:20, fontWeight:600, border:allSel?"none":"1px solid #d1d5db", background:allSel?"#374151":"white", color:allSel?"white":"#4b5563", cursor:"pointer" }}>
+                {allSel?"✕ 전체해제":"✓ 전체선택"}
+              </button>
+              <div style={{ width:1, height:20, background:"#e5e7eb" }}/>
+              {METRICS.map(m=>(
+                <button key={m.key} onClick={()=>toggleMetric(m.key)}
+                  style={{ fontSize:11, padding:"4px 12px", borderRadius:20, border:"none", background:selMetrics.includes(m.key)?m.color:"#f3f4f6", color:selMetrics.includes(m.key)?"white":"#6b7280", cursor:"pointer" }}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {selMetrics.length===0
+              ? <div style={{ height:200, display:"flex", alignItems:"center", justifyContent:"center", color:"#9ca3af" }}>항목을 선택하세요</div>
+              : <ResponsiveContainer width="100%" height={340}>
+                  <LineChart data={chartData} margin={{ top:10, right:10, left:-10, bottom:5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
+                    <XAxis dataKey="year" tick={{ fontSize:12 }}/>
+                    <YAxis tick={{ fontSize:11 }}/>
+                    <Tooltip content={<CustomTooltip/>}/>
+                    <Legend wrapperStyle={{ fontSize:11 }}/>
+                    {singleM?.normal[1]&&<ReferenceLine y={singleM.normal[1]} stroke="#10b981" strokeDasharray="4 4" label={{ value:"정상상한",fontSize:10,fill:"#10b981" }}/>}
+                    {singleM?.normal[0]&&<ReferenceLine y={singleM.normal[0]} stroke="#10b981" strokeDasharray="4 4" label={{ value:"정상하한",fontSize:10,fill:"#10b981" }}/>}
+                    {selMetrics.map(key=>{
+                      const m=METRICS.find(m=>m.key===key);
+                      return <Line key={key} type="monotone" dataKey={key} name={m.label} stroke={m.color} strokeWidth={2} connectNulls
+                        dot={(props)=>React.createElement(CustomDot,{...props,metricKey:key,stroke:m.color})} activeDot={{ r:5 }}/>;
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+            }
+          </div>
+        )}
+
+        {/* 데이터 표 */}
+        {tab==="table" && (
+          <div ref={tableRef} style={{ background:"white", borderRadius:12, border:"1px solid #f3f4f6", overflowX:"auto" }}>
+            <table style={{ width:"100%", fontSize:12, borderCollapse:"collapse" }}>
+              <thead>
+                <tr style={{ background:"#f9fafb", borderBottom:"1px solid #f3f4f6" }}>
+                  <th style={{ textAlign:"left", padding:"8px 12px", color:"#6b7280", fontWeight:600, position:"sticky", left:0, background:"#f9fafb", zIndex:10 }}>항목</th>
+                  {data.map(d=>(
+                    <th key={d.year} style={{ padding:"8px 12px", color:"#6b7280", fontWeight:600, textAlign:"center", minWidth:64 }}>
+                      {d.year}
+                      <button onClick={()=>setEditRow({...d})} style={{ display:"block", margin:"2px auto 0", background:"none", border:"none", cursor:"pointer", fontSize:12 }}>✏️</button>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {METRICS.map(m=>(
+                  <tr key={m.key} style={{ borderBottom:"1px solid #fafafa" }}>
+                    <td style={{ padding:"6px 12px", fontWeight:500, color:"#4b5563", position:"sticky", left:0, background:"white", zIndex:10, whiteSpace:"nowrap" }}>
+                      <MetricLabel metricKey={m.key}>{m.label}{m.unit&&<span style={{ color:"#9ca3af", marginLeft:4 }}>({m.unit})</span>}</MetricLabel>
+                    </td>
+                    {data.map(d=>{
+                      const val=d[m.key], lv=getLevel(m.key,val);
+                      const bg=lv===3?"#fef2f2":lv===2?"#fff7ed":lv===1?"#fffbeb":lv===0?"#f0fdf4":"";
+                      const col=lv===3?"#dc2626":lv===2?"#ea580c":lv===1?"#d97706":lv===0?"#16a34a":"#6b7280";
+                      return <td key={d.year} style={{ padding:"6px 12px", textAlign:"center", fontWeight:500, background:bg, color:col }}>
+                        {val!=null?val:<span style={{ color:"#d1d5db" }}>–</span>}
+                      </td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 검진 정보 하단 */}
+        {kpi && (
+          <div style={{ background:"white", borderRadius:12, border:"1px solid #f3f4f6", padding:"12px 16px", marginTop:16, fontSize:13 }}>
+            <p style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>검진 정보 · {kpiYear}년</p>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 24px", marginBottom:12 }}>
+              {[["검진기관","hospital"],["검진일","date"],["판정","judgment"],["의심질환","suspected"],["유질환","disease"],["기타","other"]].map(([label,key])=>(
+                <div key={key}><span style={{ fontSize:11, color:"#9ca3af" }}>{label}</span><p style={{ fontWeight:500, color:"#374151", margin:"1px 0 6px" }}>{kpi[key]||"–"}</p></div>
+              ))}
+            </div>
+            {kpi.opinion&&<div>
+              <span style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase" }}>종합소견</span>
+              <div style={{ marginTop:4, background:"#eef2ff", borderRadius:8, padding:"8px 12px", fontSize:12, color:"#3730a3", lineHeight:1.7 }}>{kpi.opinion}</div>
+            </div>}
+          </div>
+        )}
+      </div>
+
+      {/* 수정 모달 */}
+      {editRow && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50, padding:16 }}>
+          <div style={{ background:"white", borderRadius:16, padding:20, width:"100%", maxWidth:360, maxHeight:"80vh", overflowY:"auto" }}>
+            <h2 style={{ fontSize:16, fontWeight:700, marginBottom:16 }}>✏️ {editRow.year}년 수정</h2>
+            {["hospital","date","judgment","suspected","disease","other","opinion"].map(k=>(
+              <div key={k} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <label style={{ fontSize:11, color:"#6b7280", width:72, flexShrink:0 }}>{{ hospital:"검진기관",date:"검진일",judgment:"판정",suspected:"의심질환",disease:"유질환",other:"기타",opinion:"종합소견" }[k]}</label>
+                <input type="text" value={editRow[k]||""} onChange={e=>setEditRow(r=>({...r,[k]:e.target.value}))}
+                  style={{ border:"1px solid #e5e7eb", borderRadius:8, padding:"4px 8px", fontSize:12, width:"100%", outline:"none" }}/>
+              </div>
+            ))}
+            <div style={{ borderTop:"1px solid #f3f4f6", paddingTop:8, marginTop:4 }}>
+              {METRICS.map(m=>(
+                <div key={m.key} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                  <label style={{ fontSize:11, color:"#6b7280", width:72, flexShrink:0 }}>{m.label}</label>
+                  <input type="number" value={editRow[m.key]??""} onChange={e=>setEditRow(r=>({...r,[m.key]:e.target.value===""?null:Number(e.target.value)}))}
+                    style={{ border:"1px solid #e5e7eb", borderRadius:8, padding:"4px 8px", fontSize:12, width:"100%", outline:"none" }} placeholder="–"/>
+                  <span style={{ fontSize:11, color:"#9ca3af", width:36, flexShrink:0 }}>{m.unit}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:8, marginTop:16 }}>
+              <button onClick={saveEdit} style={{ flex:1, background:"#4f46e5", color:"white", border:"none", borderRadius:8, padding:"8px 0", fontSize:13, fontWeight:500, cursor:"pointer" }}>저장</button>
+              <button onClick={()=>setEditRow(null)} style={{ flex:1, background:"#f3f4f6", color:"#4b5563", border:"none", borderRadius:8, padding:"8px 0", fontSize:13, fontWeight:500, cursor:"pointer" }}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 초기화 확인 모달 */}
+      {confirmReset && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50, padding:16 }}>
+          <div style={{ background:"white", borderRadius:16, padding:24, width:"100%", maxWidth:320, textAlign:"center" }}>
+            <div style={{ fontSize:36, marginBottom:12 }}>⚠️</div>
+            <h2 style={{ fontSize:16, fontWeight:700, marginBottom:8 }}>데이터를 초기화할까요?</h2>
+            <p style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>저장된 모든 건강검진 데이터가 삭제됩니다.</p>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={()=>setConfirmReset(false)} style={{ flex:1, background:"#f3f4f6", color:"#4b5563", border:"none", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:500, cursor:"pointer" }}>취소</button>
+              <button onClick={()=>{ localStorage.removeItem(STORAGE_KEY); onReset(); }} style={{ flex:1, background:"#ef4444", color:"white", border:"none", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:500, cursor:"pointer" }}>삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 루트 ─────────────────────────────────────────────
+function App() {
+  const [data, setData] = useState(()=>loadData());
+  if (!data.length) return <Onboarding onStart={d=>setData(d)}/>;
+  return <Dashboard data={data} onReset={()=>setData([])}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
-
 </body>
 </html>
