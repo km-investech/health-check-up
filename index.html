@@ -133,7 +133,7 @@ async function extractFromImage(file) {
       { type:"image_url", image_url:{ url: dataURL } },
       { type:"text", text: PROMPT }
     ]}],
-    { model:"claude-sonnet-4-20250514" }
+    { model:"gpt-4o" }
   );
   // 응답 구조 최대한 커버
   let text = "";
